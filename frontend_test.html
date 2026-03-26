@@ -1,0 +1,350 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Backend Live Tester</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      max-width: 980px;
+      margin: 24px auto;
+      padding: 0 16px;
+      color: #222;
+    }
+    h1 { margin-bottom: 8px; }
+    .muted { color: #666; margin-top: 0; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+    }
+    .card {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 12px;
+      background: #fafafa;
+    }
+    .card h3 { margin-top: 0; }
+    label {
+      display: block;
+      font-size: 13px;
+      margin-top: 8px;
+    }
+    input, select, button {
+      width: 100%;
+      box-sizing: border-box;
+      margin-top: 4px;
+      padding: 8px;
+      border: 1px solid #bbb;
+      border-radius: 6px;
+      font-size: 14px;
+    }
+    button {
+      margin-top: 10px;
+      cursor: pointer;
+      background: #1f6feb;
+      color: white;
+      border: none;
+    }
+    button.secondary { background: #444; }
+    .row {
+      display: flex;
+      gap: 8px;
+    }
+    .row button { flex: 1; }
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      padding: 12px;
+      background: #111;
+      color: #d8ffd8;
+      min-height: 200px;
+    }
+    .token {
+      font-size: 12px;
+      background: #f4f4f4;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 8px;
+      overflow-wrap: anywhere;
+    }
+  </style>
+</head>
+<body>
+  <h1>Live Tester для backend</h1>
+  <p class="muted">Тестирование API: register / login / me / update / resource / logout / delete / admin</p>
+
+  <div class="card">
+    <label>Base URL</label>
+    <input id="baseUrl" value="http://localhost:8000" />
+    <label>Текущий access token</label>
+    <div id="tokenView" class="token">-</div>
+    <div class="row">
+      <button class="secondary" id="saveBaseUrlBtn">Сохранить URL</button>
+      <button class="secondary" id="clearTokenBtn">Очистить токен</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <h3>Регистрация</h3>
+      <label>Имя</label><input id="regFirstName" value="Ivan" />
+      <label>Фамилия</label><input id="regLastName" value="Petrov" />
+      <label>Отчество (опционально)</label><input id="regMiddleName" value="Ivanovich" />
+      <label>Email</label><input id="regEmail" value="ivan@example.com" />
+      <label>Пароль</label><input id="regPassword" type="password" value="Pass1234" />
+      <label>Повтор пароля</label><input id="regPasswordRepeat" type="password" value="Pass1234" />
+      <button id="registerBtn">POST /register</button>
+    </div>
+
+    <div class="card">
+      <h3>Логин</h3>
+      <label>Email</label><input id="loginEmail" value="ivan@example.com" />
+      <label>Пароль</label><input id="loginPassword" type="password" value="Pass1234" />
+      <button id="loginBtn">POST /login</button>
+    </div>
+
+    <div class="card">
+      <h3>Профиль</h3>
+      <button id="meBtn">GET /me</button>
+      <label>Новое имя</label><input id="updFirstName" placeholder="Ivan" />
+      <label>Новая фамилия</label><input id="updLastName" placeholder="Petrov" />
+      <label>Новое отчество (пусто = очистить)</label><input id="updMiddleName" placeholder="Ivanovich" />
+      <button id="updateBtn">PATCH /me</button>
+    </div>
+
+    <div class="card">
+      <h3>Ресурсы / Выход</h3>
+      <label>Ресурс</label>
+      <select id="resourceName">
+        <option value="reports">reports (обычно 200)</option>
+        <option value="users-admin">users-admin (обычно 403 для user)</option>
+      </select>
+      <button id="resourceBtn">GET /resource/&lt;name&gt;</button>
+      <button id="logoutBtn">POST /logout</button>
+      <button id="deleteBtn">DELETE /me</button>
+    </div>
+
+    <div class="card">
+      <h3>Admin API</h3>
+      <label>Role name</label><input id="adminRoleName" value="user" />
+      <label>Permissions (через запятую)</label><input id="adminPermissionsCsv" value="profile.read,profile.update,account.delete,resource.reports.read,admin.panel.access" />
+      <div class="row">
+        <button id="adminListRolesBtn">GET /admin/roles</button>
+        <button id="adminGetRolePermsBtn">GET role permissions</button>
+      </div>
+      <button id="adminUpdateRolePermsBtn">PATCH role permissions</button>
+
+      <label>User ID</label><input id="adminUserId" value="1" />
+      <label>Roles (через запятую)</label><input id="adminUserRolesCsv" value="user" />
+      <div class="row">
+        <button id="adminGetUserRolesBtn">GET user roles</button>
+        <button id="adminUpdateUserRolesBtn">POST user roles</button>
+      </div>
+
+      <label>Dev key (для /dev/make-admin)</label><input id="devKey" value="dev-admin-key" />
+      <label>Email для выдачи admin</label><input id="devAdminEmail" placeholder="user@example.com" />
+      <button id="devMakeAdminBtn">POST /dev/make-admin</button>
+    </div>
+  </div>
+
+  <h3>Лог ответов</h3>
+  <pre id="log"></pre>
+
+  <script>
+    const tokenKey = "backend_test_token";
+    const baseUrlKey = "backend_base_url";
+
+    const $ = (id) => document.getElementById(id);
+    const log = $("log");
+    const tokenView = $("tokenView");
+
+    function appendLog(title, payload) {
+      const text = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+      log.textContent = `[${new Date().toLocaleTimeString()}] ${title}\n${text}\n\n` + log.textContent;
+    }
+
+    function getToken() {
+      return localStorage.getItem(tokenKey) || "";
+    }
+
+    function setToken(token) {
+      if (token) {
+        localStorage.setItem(tokenKey, token);
+      } else {
+        localStorage.removeItem(tokenKey);
+      }
+      tokenView.textContent = token || "-";
+    }
+
+    function getBaseUrl() {
+      return $("baseUrl").value.trim().replace(/\/+$/, "");
+    }
+
+    async function apiCall(path, method, body = null, useAuth = false) {
+      const headers = { "Content-Type": "application/json" };
+      if (useAuth && getToken()) {
+        headers["Authorization"] = `Bearer ${getToken()}`;
+      }
+      const res = await fetch(`${getBaseUrl()}${path}`, {
+        method,
+        headers,
+        body: body ? JSON.stringify(body) : null
+      });
+      let data = null;
+      try {
+        data = await res.json();
+      } catch (_e) {
+        data = { raw: "No JSON response" };
+      }
+      appendLog(`${method} ${path} -> ${res.status}`, data);
+      return { status: res.status, data };
+    }
+
+    $("saveBaseUrlBtn").onclick = () => {
+      localStorage.setItem(baseUrlKey, getBaseUrl());
+      appendLog("INFO", `Base URL saved: ${getBaseUrl()}`);
+    };
+
+    $("clearTokenBtn").onclick = () => {
+      setToken("");
+      appendLog("INFO", "Token cleared");
+    };
+
+    $("registerBtn").onclick = async () => {
+      await apiCall("/register", "POST", {
+        first_name: $("regFirstName").value,
+        last_name: $("regLastName").value,
+        middle_name: $("regMiddleName").value,
+        email: $("regEmail").value,
+        password: $("regPassword").value,
+        password_repeat: $("regPasswordRepeat").value
+      }, false);
+    };
+
+    $("loginBtn").onclick = async () => {
+      const result = await apiCall("/login", "POST", {
+        email: $("loginEmail").value,
+        password: $("loginPassword").value
+      }, false);
+      if (result.status === 200 && result.data && result.data.access_token) {
+        setToken(result.data.access_token);
+      }
+    };
+
+    $("meBtn").onclick = async () => {
+      await apiCall("/me", "GET", null, true);
+    };
+
+    $("updateBtn").onclick = async () => {
+      const payload = {};
+      if ($("updFirstName").value !== "") payload.first_name = $("updFirstName").value;
+      if ($("updLastName").value !== "") payload.last_name = $("updLastName").value;
+      if ($("updMiddleName").value !== "") {
+        payload.middle_name = $("updMiddleName").value;
+      } else if ($("updMiddleName").value === "") {
+        payload.middle_name = "";
+      }
+      await apiCall("/me", "PATCH", payload, true);
+    };
+
+    $("resourceBtn").onclick = async () => {
+      const name = $("resourceName").value;
+      await apiCall(`/resource/${encodeURIComponent(name)}`, "GET", null, true);
+    };
+
+    $("logoutBtn").onclick = async () => {
+      await apiCall("/logout", "POST", null, true);
+    };
+
+    $("deleteBtn").onclick = async () => {
+      await apiCall("/me", "DELETE", null, true);
+    };
+
+    $("adminListRolesBtn").onclick = async () => {
+      await apiCall("/admin/roles", "GET", null, true);
+    };
+
+    $("adminGetRolePermsBtn").onclick = async () => {
+      const roleName = $("adminRoleName").value.trim();
+      if (!roleName) {
+        appendLog("INFO", "Role name is required");
+        return;
+      }
+      await apiCall(`/admin/roles/${encodeURIComponent(roleName)}/permissions`, "GET", null, true);
+    };
+
+    $("adminUpdateRolePermsBtn").onclick = async () => {
+      const roleName = $("adminRoleName").value.trim();
+      if (!roleName) {
+        appendLog("INFO", "Role name is required");
+        return;
+      }
+      const permissions = $("adminPermissionsCsv").value
+        .split(",")
+        .map((v) => v.trim())
+        .filter((v) => v.length > 0);
+      await apiCall(
+        `/admin/roles/${encodeURIComponent(roleName)}/permissions`,
+        "PATCH",
+        { permissions },
+        true
+      );
+    };
+
+    $("adminGetUserRolesBtn").onclick = async () => {
+      const userId = $("adminUserId").value.trim();
+      if (!userId) {
+        appendLog("INFO", "User ID is required");
+        return;
+      }
+      await apiCall(`/admin/users/${encodeURIComponent(userId)}/roles`, "GET", null, true);
+    };
+
+    $("adminUpdateUserRolesBtn").onclick = async () => {
+      const userId = $("adminUserId").value.trim();
+      if (!userId) {
+        appendLog("INFO", "User ID is required");
+        return;
+      }
+      const roles = $("adminUserRolesCsv").value
+        .split(",")
+        .map((v) => v.trim())
+        .filter((v) => v.length > 0);
+      await apiCall(
+        `/admin/users/${encodeURIComponent(userId)}/roles`,
+        "POST",
+        { roles },
+        true
+      );
+    };
+
+    $("devMakeAdminBtn").onclick = async () => {
+      const email = $("devAdminEmail").value.trim();
+      const devKey = $("devKey").value.trim();
+      if (!email) {
+        appendLog("INFO", "Email is required for /dev/make-admin");
+        return;
+      }
+      await apiCall(
+        "/dev/make-admin",
+        "POST",
+        { email, dev_key: devKey },
+        false
+      );
+    };
+
+    (function init() {
+      const savedBaseUrl = localStorage.getItem(baseUrlKey);
+      if (savedBaseUrl) {
+        $("baseUrl").value = savedBaseUrl;
+      }
+      setToken(getToken());
+      appendLog("INFO", "UI initialized");
+    })();
+  </script>
+</body>
+</html>
